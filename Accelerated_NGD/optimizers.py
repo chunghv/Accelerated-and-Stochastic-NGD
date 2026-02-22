@@ -68,6 +68,60 @@ class Nesterov(Trainer):
         self.alpha = 1.
 
 
+class HeavyBall(Trainer):
+    """
+    Heavy Ball (Polyak's Momentum) với tham số tối ưu cho hàm lồi mạnh.
+    
+    Arguments:
+        L (float): Hằng số trơn (Smoothness constant)
+        mu (float): Hằng số lồi mạnh (Strong convexity constant)
+    """
+    def __init__(self, L, mu, *args, **kwargs):
+        super(HeavyBall, self).__init__(*args, **kwargs)
+        if L <= 0:
+            raise ValueError(f"L (Smoothness) must be positive. Invalid value: {L}")
+        if mu <= 0:
+            raise ValueError(f"Mu (Strong convexity) must be positive for Polyak's optimal parameters. Invalid value: {mu}")
+        if mu >= L:
+            print(f"Warning: mu ({mu}) >= L ({L}). Problem might be essentially easy or parameters are wrong.")
+        self.L = L
+        self.mu = mu
+        
+        # Condition number: kappa = L / mu
+        sqrt_L = np.sqrt(L)
+        sqrt_mu = np.sqrt(mu)
+        
+        # Step size (alpha) tối ưu: 4 / (sqrt(L) + sqrt(mu))^2
+        self.lr = 4 / ((sqrt_L + sqrt_mu) ** 2)
+        
+        # Momentum (beta) tối ưu: ((sqrt(L) - sqrt(mu)) / (sqrt(L) + sqrt(mu)))^2
+        self.beta = ((sqrt_L - sqrt_mu) / (sqrt_L + sqrt_mu)) ** 2
+        
+    def step(self):
+        # Heavy Ball update:
+        # v_{k+1} = beta * v_k + alpha * grad(w_k)
+        # w_{k+1} = w_k - v_{k+1}
+        self.v = self.beta * self.v + self.lr * self.grad
+        return self.w - self.v
+    
+    def init_run(self, *args, **kwargs):
+        super(HeavyBall, self).init_run(*args, **kwargs)
+        # Khởi tạo vector vận tốc v = 0
+        self.v = np.zeros_like(self.w)
+        
+        # Log trạng thái ban đầu
+        grad = self.grad_func(self.w)
+        self.lrs = [self.lr]
+        self.grads = [la.norm(grad)]
+        self.save_checkpoint()
+
+    def update_logs(self):
+        super(HeavyBall, self).update_logs()
+        self.lrs.append(self.lr)
+        self.grads.append(la.norm(self.grad_func(self.w)))
+        
+
+
 class NGDh(Trainer):
     def __init__(self, lr0=None, eta0=None, eta1=None, beta=None, alpha=None, gamma=None, *args, **kwargs):
         super(NGDh, self).__init__(*args, **kwargs)
